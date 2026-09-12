@@ -1,13 +1,16 @@
 # Pololu Dual VNH5019 + ESP32
 
-Control del motor 1 por serial con un **ESP32-WROOM-32** y el driver
-**Pololu Dual VNH5019**. Permite seleccionar el sentido de giro, ajustar el duty
-y detener el motor. El motor 2 queda deshabilitado.
+Control de motores para la base omnidireccional con **ESP32-WROOM-32** y
+**Pololu Dual VNH5019**. La prueba de M1 usa comandos seriales; el borrador de
+la base completa lee el **FS-iA6** y distribuye las referencias a cuatro motores
+mediante dos drivers.
 
-- [Código Arduino](arduino/esp32_motor1/esp32_motor1.ino)
+- [Prueba de M1 por serial](arduino/esp32_motor1/esp32_motor1.ino)
+- [Borrador de cuatro motores por RC](arduino/esp32_omni4_rc/esp32_omni4_rc.ino)
+- [Cableado y puesta en marcha del omnidireccional](docs/omni4.md)
 - [Manual del driver (PDF)](dual_vnh5019_motor_driver_shield.PDF)
 
-## Hardware
+## Hardware de la prueba de M1
 
 - ESP32 DevKit con módulo ESP32-WROOM-32.
 - Pololu Dual VNH5019.
@@ -18,7 +21,7 @@ y detener el motor. El motor 2 queda deshabilitado.
 Este pinout corresponde al ESP32 original; no se debe trasladar directamente
 a un ESP32-C3 o ESP32-S3.
 
-## Conexiones
+## Conexiones de la prueba de M1
 
 ![Conexiones del VNH5019 con un microcontrolador](docs/images/conexiones-driver.jpg)
 
@@ -136,7 +139,7 @@ En `estado`, la dirección vale `0` para detenido, `1` para avance y `-1` para
 reversa. Es el estado solicitado al programa, no una medición del movimiento.
 El PWM aplicado se muestra en la escala 0–255.
 
-## PWM y rampas
+## PWM y rampas de M1
 
 La configuración está al inicio del sketch:
 
@@ -206,6 +209,126 @@ reset. Un paro normal sí permite volver a arrancar por serial.
 La rampa controla el **duty**, no la velocidad ni la corriente. El programa no
 implementa regulación de RPM, límite de corriente por software ni lectura de M1CS.
 
+## Agregar otro motor
+
+Cada canal necesita su propio estado: dirección, PWM actual, referencia y tiempo
+de inversión. Para habilitar M2 del primer driver, se conectan sus terminales
+M2A/M2B y se usan GPIO 18/19/23/33 de la tabla. Ese canal ya no se mantiene en LOW:
+se inicializa otro PWM y se actualiza su rampa en el mismo `loop()`.
+
+La lógica queda separada en tres partes:
+
+1. **Entrada:** serial para pruebas o canales RC para la base completa.
+2. **Referencias:** un valor con signo por motor, entre -255 y 255.
+3. **Salida:** dirección, rampa, habilitación y falla de cada canal.
+
+No conviene copiar el `loop()` de M1 ni usar esperas bloqueantes por motor.
+El [borrador RC](arduino/esp32_omni4_rc/esp32_omni4_rc.ino) usa un arreglo de cuatro
+motores y actualiza todos cada 10 ms. Si un canal reporta falla, corta los cuatro.
+
+## Base omnidireccional en cruz
+
+La base lleva cuatro ruedas omni con tracción tangencial: **F** al frente,
+**I** a la izquierda, **T** atrás y **D** a la derecha. El orden en el código
+es **F, I, T, D**. Driver A controla F/I y driver B controla T/D.
+
+![Ejes de la base y sentido positivo de las ruedas](docs/images/base-cruz.svg)
+
+Tomamos `x` hacia el frente, `y` hacia la izquierda y giro positivo antihorario,
+vistos desde arriba. Las flechas azules indican el sentido positivo de tracción
+de cada rueda. Los signos eléctricos se ajustan después con `polaridad`.
+
+### Cinemática
+
+Para una rueda en $(x_i,y_i)$, con dirección de tracción unitaria
+$\mathbf{t}_i=(t_{ix},t_{iy})$ y radio $r$, la velocidad angular requerida es:
+
+$$
+\dot\phi_i = \frac{t_{ix}(v_x-\omega y_i)+t_{iy}(v_y+\omega x_i)}{r}
+$$
+
+Con las cuatro ruedas a distancia $L$ del centro:
+
+$$
+\begin{bmatrix}
+\dot\phi_F\\
+\dot\phi_I\\
+\dot\phi_T\\
+\dot\phi_D
+\end{bmatrix}
+=\frac{1}{r}
+\begin{bmatrix}
+0 & 1 & L\\
+-1 & 0 & L\\
+0 & -1 & L\\
+1 & 0 & L
+\end{bmatrix}
+\begin{bmatrix}v_x\\v_y\\\omega\end{bmatrix}
+$$
+
+Aquí $v_x,v_y$ están en m/s, $\omega$ en rad/s, $L,r$ en metros y
+$\dot\phi_i$ en rad/s. $L$ se mide al centro de contacto de la rueda.
+Si las distancias no son iguales, se usa la posición real de cada rueda en
+la expresión general.
+
+| Movimiento positivo | F | I | T | D |
+| --- | --- | --- | --- | --- |
+| Avance $v_x$ | 0 | − | 0 | + |
+| Lateral izquierdo $v_y$ | + | 0 | − | 0 |
+| Giro antihorario $\omega$ | + | + | + | + |
+
+Para recuperar la velocidad de la base a partir de velocidades medidas:
+
+$$
+v_x=\frac{r}{2}(\dot\phi_D-\dot\phi_I),\qquad
+v_y=\frac{r}{2}(\dot\phi_F-\dot\phi_T),\qquad
+\omega=\frac{r}{4L}(\dot\phi_F+\dot\phi_I+\dot\phi_T+\dot\phi_D)
+$$
+
+Estas relaciones suponen rodadura ideal en la dirección de tracción y libertad
+lateral por los rodillos. La derivación sigue la proyección de la velocidad del
+chasis sobre cada rueda descrita en
+[Modern Robotics, sección 13.2](https://modernrobotics.northwestern.edu/nu-gm-book-resource/13-2-omnidirectional-wheeled-mobile-robots-part-1-of-2/).
+
+### Mezcla que usa el borrador
+
+Por ahora trabajamos en lazo abierto. Los sticks se normalizan a -1…1 y se mezclan:
+
+```text
+F =  lateral + giro
+I = -avance  + giro
+T = -lateral + giro
+D =  avance  + giro
+```
+
+`giro` incluye `GANANCIA_GIRO = 0.5`. Si alguna salida supera magnitud 1,
+se dividen **las cuatro** entre el máximo absoluto para conservar sus proporciones.
+Después se aplica `DUTY_MAX = 0.35`, se convierte a 0–255 y se ajusta la polaridad.
+Estas entradas son referencias normalizadas; todavía no son m/s ni rad/s.
+
+La matriz da velocidades de rueda. Usar su mezcla como duty sirve para empezar,
+pero no compensa diferencias entre motores o carga. Para cerrar velocidad,
+la salida de la matriz será la referencia de un PI por rueda con encoder.
+Los radios, distancias y relación de transmisión se incorporan en esa etapa.
+
+### Receptor y rampas de cuatro motores
+
+El FS-iA6 se lee por sus salidas PWM: CH1 lateral, CH2 avance, CH4 giro y CH5
+habilitación. No se usa iBUS. Los canales se miden por interrupciones y se revisa
+su vigencia antes de actualizar las salidas.
+
+En el borrador RC, una inversión **sí baja por rampa hasta cero**, espera 1 s y
+sube en el nuevo sentido. Cada rueda lleva su propio estado. El paso sigue siendo
+una cuenta PWM cada 10 ms; desde 35% hasta −35% son aproximadamente
+0.89 s de bajada + 1 s de espera + 0.89 s de subida. Durante esas transiciones
+las proporciones entre ruedas pueden variar. CH5 en OFF, pérdida de pulsos o falla
+cortan las cuatro salidas inmediatamente.
+
+El sketch inicia con `SOLO_RECEPTOR = true`. Primero se revisan los pulsos y el
+failsafe, después se cambia a `false` para probar los motores. El pinout completo,
+la adaptación de señales y la secuencia de habilitación están en
+[docs/omni4.md](docs/omni4.md).
+
 ## Archivos y referencias
 
 ```text
@@ -214,16 +337,23 @@ arduino/
   README.md
   esp32_motor1/
     esp32_motor1.ino
-docs/images/
-  conexiones-driver.jpg
-  alimentacion-driver.jpg
+  esp32_omni4_rc/
+    esp32_omni4_rc.ino
+    ControlOmni.h
+    ReceptorPWM.h
+docs/
+  omni4.md
+  images/
+    conexiones-driver.jpg
+    alimentacion-driver.jpg
+    base-cruz.svg
+tests/
+  README.md
+  control_omni_test.cpp
+  receptor_pwm_test.cpp
+  mocks/Arduino.h
 dual_vnh5019_motor_driver_shield.PDF
 ```
-
-El programa fue probado en hardware por el autor. También se verificaron mediante
-simulación de las funciones Arduino el procesamiento de comandos, las rampas,
-el cambio de sentido, el paro y el bloqueo por falla. Esto no caracteriza la
-respuesta mecánica ni térmica del conjunto motor-driver.
 
 - [Manual incluido](dual_vnh5019_motor_driver_shield.PDF), secciones 3.c, 4.b y 8.
 - [Conexiones del VNH5019 — Pololu](https://www.pololu.com/docs/0J49/4.b).
