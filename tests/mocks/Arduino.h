@@ -34,7 +34,9 @@ template <typename T> T constrain(T valor, T minimo, T maximo) {
 }
 struct SerialMock {
   void begin(uint32_t) {}
-  void println(const char *) {}
+  void println() {}
+  template <typename... Args> void print(Args...) {}
+  template <typename... Args> void println(Args...) {}
   template <typename... Args> void printf(const char *, Args...) {}
 };
 inline SerialMock Serial;

@@ -1,6 +1,6 @@
 # Cuatro motores, receptor PPM y solenoide
 
-Configuración actual para una ESP32 DevKit V1 con módulo WROOM-32, dos Pololu
+Configuración sin IMU para una ESP32 DevKit V1 con módulo WROOM-32, dos Pololu
 Dual VNH5019, cuatro ruedas omni y un receptor configurado con salida PPM
 compuesta. El [sketch](../arduino/esp32_omni4_rc/esp32_omni4_rc.ino) usa un solo
 GPIO para recibir hasta seis canales consecutivos.

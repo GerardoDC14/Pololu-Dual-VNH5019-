@@ -1,15 +1,49 @@
 # Pololu Dual VNH5019 + ESP32
 
 Control de motores para la base omnidireccional con **ESP32 DevKit V1
-(ESP32-WROOM-32)** y dos **Pololu Dual VNH5019**. El control actual recibe una
-trama **PPM compuesta** del receptor, mezcla tres ejes y gobierna cuatro motores.
-CH5 dispara durante un tiempo limitado la salida para un solenoide.
+(ESP32-WROOM-32)** y dos **Pololu Dual VNH5019**. El repositorio conserva cuatro
+etapas independientes: el programa funcional recibido, la versión con solenoide
+y dos variantes de control orientado al campo mediante IMU.
 
 - [Prueba de M1 por serial](arduino/esp32_motor1/esp32_motor1.ino)
-- [Control actual de cuatro motores por PPM](arduino/esp32_omni4_rc/esp32_omni4_rc.ino)
+- [Control híbrido e IMU](docs/imu-hibrido.md)
 - [Manual del driver (PDF)](dual_vnh5019_motor_driver_shield.PDF)
 
-## Configuración actual: DevKit V1, PPM y solenoide
+## Versiones disponibles
+
+Cada carpeta es un sketch autónomo. Abrir el `.ino` cuyo nombre coincide con la
+carpeta; no mezclar headers entre variantes.
+
+| Variante | Sketch | Función |
+| --- | --- | --- |
+| Original recibido | [`esp32_omni4_rc_original`](arduino/esp32_omni4_rc_original/esp32_omni4_rc_original.ino) | Copia del ZIP funcional: PPM, cuatro motores y CH5 como habilitación |
+| Solenoide, sin IMU | [`esp32_omni4_rc`](arduino/esp32_omni4_rc/esp32_omni4_rc.ino) | Cableado actual; CH5 dispara GPIO 13 y los motores dependen sólo de PPM/DIAG |
+| BNO055 | [`esp32_omni4_bno055`](arduino/esp32_omni4_bno055/esp32_omni4_bno055.ino) | Traslación orientada al campo, rumbo retenido, CH5 solenoide y CH6 selector 0°/180° |
+| MPU6050 | [`esp32_omni4_mpu6050`](arduino/esp32_omni4_mpu6050/esp32_omni4_mpu6050.ino) | Mismo control híbrido, con yaw obtenido por integración del giroscopio |
+
+La copia original se conserva sin agregarle timeout, solenoide ni correcciones
+de seguridad, precisamente para poder regresar al último punto funcional
+recibido. La segunda variante contiene el cambio de solenoide ya probado por
+lógica, pero todavía no usa orientación.
+
+Las dos variantes con IMU definen como **0°** la orientación física presente al
+encender. CH3/CH4 ordenan traslación respecto al campo, CH1 desplaza la referencia
+angular y al soltarlo el controlador mantiene el último rumbo. CH6 funciona por
+transición: extremo alto selecciona 0°, centro no cambia nada y extremo bajo
+selecciona 180°. La posición inicial de CH6 no genera una orden.
+
+El BNO055 opera en `IMUPLUS`, sin magnetómetro, para reducir perturbaciones por
+motores y corrientes altas. El MPU6050 calibra el sesgo al arrancar e integra
+`gyro.z`; es más básico y acumulará más deriva. Ambos requieren que el robot esté
+inmóvil y orientado hacia la portería durante el encendido.
+
+Las APIs utilizadas corresponden a las librerías oficiales
+[Adafruit BNO055](https://github.com/adafruit/Adafruit_BNO055) y
+[Adafruit MPU6050](https://github.com/adafruit/Adafruit_MPU6050). Se instalan
+desde Arduino Library Manager junto con **Adafruit Unified Sensor** y
+**Adafruit BusIO**.
+
+## Configuración sin IMU: DevKit V1, PPM y solenoide
 
 Los números siguientes son **GPIO**, no posiciones físicas del conector. Esta
 asignación corresponde al DevKit V1 con módulo ESP32-WROOM-32.
@@ -73,6 +107,24 @@ debe mandar un MOSFET lógico o un módulo de relevador compatible con lógica d
 bobina, alimentación separada dimensionada para su corriente y tierra común
 con el ESP32. Si el módulo es activo en LOW, cambiar
 `SOLENOIDE_ACTIVO_EN_HIGH` a `false`.
+
+## Configuración con BNO055 o MPU6050
+
+Las IMU usan I²C en GPIO 21/22. Como esos pines pertenecían a señales de motor,
+las dos variantes IMU requieren este cambio de cableado:
+
+| Función | Sin IMU | Con IMU |
+| --- | ---: | ---: |
+| M1 PWM | GPIO 22 | GPIO 4 |
+| M3 INB | GPIO 21 | GPIO 2 |
+| SDA | — | GPIO 21 |
+| SCL | — | GPIO 22 |
+
+PPM permanece en GPIO 27, el solenoide en GPIO 13 y EN/DIAG en GPIO 16. GPIO 2
+y GPIO 4 son pines de arranque: sólo se conectan a las entradas de alta
+impedancia del VNH5019, sin pull-ups adicionales. El procedimiento completo de
+montaje, signos y ajuste del controlador está en
+[Control híbrido orientado al campo](docs/imu-hibrido.md).
 
 ## Hardware de la prueba de M1
 
@@ -286,9 +338,10 @@ La lógica queda separada en tres partes:
 2. **Referencias:** un valor con signo por motor, entre -255 y 255.
 3. **Salida:** dirección, rampa, habilitación y falla de cada canal.
 
-No conviene copiar el `loop()` de M1 ni usar esperas bloqueantes por motor.
-El [borrador RC](arduino/esp32_omni4_rc/esp32_omni4_rc.ino) usa un arreglo de cuatro
-motores y actualiza todos cada 10 ms. Si un canal reporta falla, corta los cuatro.
+No conviene copiar el `loop()` de M1 ni usar esperas bloqueantes por motor. Las
+versiones RC usan un arreglo de cuatro motores. La variante sin IMU actualiza el
+control cada 2 ms y las variantes con IMU cada 5 ms. Una pérdida de PPM o una
+señal baja en EN/DIAG corta los cuatro motores.
 
 ## Base omnidireccional en cruz
 
@@ -354,7 +407,7 @@ lateral por los rodillos. La derivación sigue la proyección de la velocidad de
 chasis sobre cada rueda descrita en
 [Modern Robotics, sección 13.2](https://modernrobotics.northwestern.edu/nu-gm-book-resource/13-2-omnidirectional-wheeled-mobile-robots-part-1-of-2/).
 
-### Mezcla que usa el borrador
+### Mezcla de cuatro motores
 
 Por ahora trabajamos en lazo abierto. Los sticks se normalizan a -1…1 y se mezclan:
 
@@ -396,14 +449,30 @@ arduino/
     esp32_omni4_rc.ino
     ControlOmni.h
     PPM.h
+  esp32_omni4_rc_original/
+    esp32_omni4_rc_original.ino
+    ControlOmni.h
+    PPM.h
+  esp32_omni4_bno055/
+    esp32_omni4_bno055.ino
+    ControlCampo.h
+    ControlOmni.h
+    PPM.h
+  esp32_omni4_mpu6050/
+    esp32_omni4_mpu6050.ino
+    ControlCampo.h
+    ControlOmni.h
+    PPM.h
 docs/
   omni4.md
+  imu-hibrido.md
   images/
     conexiones-driver.jpg
     alimentacion-driver.jpg
     base-cruz.svg
 tests/
   README.md
+  control_campo_test.cpp
   control_omni_test.cpp
   ppm_test.cpp
   mocks/Arduino.h
