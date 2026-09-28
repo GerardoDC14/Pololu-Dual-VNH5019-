@@ -2,8 +2,8 @@
 
 Control de motores para la base omnidireccional con **ESP32 DevKit V1
 (ESP32-WROOM-32)** y dos **Pololu Dual VNH5019**. El repositorio conserva cuatro
-etapas independientes: el programa funcional recibido, la versión con solenoide
-y dos variantes de control orientado al campo mediante IMU.
+etapas independientes: el control base PPM, la versión con solenoide y dos
+variantes de control orientado al campo mediante IMU.
 
 - [Prueba de M1 por serial](arduino/esp32_motor1/esp32_motor1.ino)
 - [Control híbrido e IMU](docs/imu-hibrido.md)
@@ -16,15 +16,14 @@ carpeta; no mezclar headers entre variantes.
 
 | Variante | Sketch | Función |
 | --- | --- | --- |
-| Original recibido | [`esp32_omni4_rc_original`](arduino/esp32_omni4_rc_original/esp32_omni4_rc_original.ino) | Copia del ZIP funcional: PPM, cuatro motores y CH5 como habilitación |
+| Control base PPM | [`esp32_omni4_base`](arduino/esp32_omni4_base/esp32_omni4_base.ino) | Cuatro motores por PPM y CH5 como habilitación general |
 | Solenoide, sin IMU | [`esp32_omni4_rc`](arduino/esp32_omni4_rc/esp32_omni4_rc.ino) | Cableado actual; CH5 dispara GPIO 13 y los motores dependen sólo de PPM/DIAG |
 | BNO055 | [`esp32_omni4_bno055`](arduino/esp32_omni4_bno055/esp32_omni4_bno055.ino) | Traslación orientada al campo, rumbo retenido, CH5 solenoide y CH6 selector 0°/180° |
 | MPU6050 | [`esp32_omni4_mpu6050`](arduino/esp32_omni4_mpu6050/esp32_omni4_mpu6050.ino) | Mismo control híbrido, con yaw obtenido por integración del giroscopio |
 
-La copia original se conserva sin agregarle timeout, solenoide ni correcciones
-de seguridad, precisamente para poder regresar al último punto funcional
-recibido. La segunda variante contiene el cambio de solenoide ya probado por
-lógica, pero todavía no usa orientación.
+El control base conserva el comportamiento mínimo de movimiento por PPM. La
+variante siguiente sustituye la habilitación de CH5 por el pulso temporizado del
+solenoide, todavía sin control de orientación.
 
 Las dos variantes con IMU definen como **0°** la orientación física presente al
 encender. CH3/CH4 ordenan traslación respecto al campo, CH1 desplaza la referencia
@@ -449,8 +448,8 @@ arduino/
     esp32_omni4_rc.ino
     ControlOmni.h
     PPM.h
-  esp32_omni4_rc_original/
-    esp32_omni4_rc_original.ino
+  esp32_omni4_base/
+    esp32_omni4_base.ino
     ControlOmni.h
     PPM.h
   esp32_omni4_bno055/

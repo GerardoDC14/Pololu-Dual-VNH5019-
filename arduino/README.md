@@ -3,7 +3,7 @@
 | Carpeta | Uso |
 | --- | --- |
 | [esp32_motor1](esp32_motor1/esp32_motor1.ino) | Prueba de M1 por serial |
-| [esp32_omni4_rc_original](esp32_omni4_rc_original/esp32_omni4_rc_original.ino) | Copia sin cambios funcionales del ZIP recibido |
+| [esp32_omni4_base](esp32_omni4_base/esp32_omni4_base.ino) | Control base de cuatro motores por PPM y CH5 como habilitación |
 | [esp32_omni4_rc](esp32_omni4_rc/esp32_omni4_rc.ino) | Cuatro motores por PPM y pulso de solenoide en GPIO 13, sin IMU |
 | [esp32_omni4_bno055](esp32_omni4_bno055/esp32_omni4_bno055.ino) | Control orientado al campo con BNO055 |
 | [esp32_omni4_mpu6050](esp32_omni4_mpu6050/esp32_omni4_mpu6050.ino) | Control orientado al campo con MPU6050 |
