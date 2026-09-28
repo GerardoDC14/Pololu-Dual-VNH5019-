@@ -27,6 +27,47 @@ inline float eje(uint16_t pulso, int minimo, int centro, int maximo, int zona) {
   return 0;
 }
 
+// Genera un pulso de duracion fija cuando un switch RC cambia en cualquier
+// direccion. El primer valor valido solo establece el estado inicial.
+struct DisparoPorCambio {
+  bool inicializado = false;
+  bool estado = false;
+  bool activo = false;
+  uint32_t inicio = 0;
+
+  bool actualizar(bool valido, uint16_t pulso, uint32_t ahora, uint32_t duracion) {
+    if (!valido) {
+      inicializado = false;
+      activo = false;
+      return false;
+    }
+
+    bool estadoNuevo = estado;
+    bool estadoDefinido = false;
+    if (pulso < 1300) {
+      estadoNuevo = false;
+      estadoDefinido = true;
+    } else if (pulso > 1700) {
+      estadoNuevo = true;
+      estadoDefinido = true;
+    }
+
+    if (estadoDefinido) {
+      if (!inicializado) {
+        inicializado = true;
+        estado = estadoNuevo;
+      } else if (estadoNuevo != estado) {
+        estado = estadoNuevo;
+        inicio = ahora;
+        activo = true;
+      }
+    }
+
+    if (activo && uint32_t(ahora - inicio) >= duracion) activo = false;
+    return activo;
+  }
+};
+
 struct Habilitacion {
   bool activo = false;
   bool vioOff = false;

@@ -1,123 +1,164 @@
-// Borrador: cuatro omni, dos VNH5019 y FS-iA6 por PWM.
 #include <Arduino.h>
-#include "ControlOmni.h"
-#include "ReceptorPWM.h"
 
-const bool SOLO_RECEPTOR = true; // false despues de revisar canales y failsafe
-const float DUTY_MAX = 0.35f;
-const float GANANCIA_GIRO = 0.5f;
-const uint32_t PASO_MS = 10;
-const uint32_t PAUSA_INVERSION_MS = 1000;
-const int MIN_US[3] = {1000, 1000, 1000};
-const int CENTRO_US[3] = {1500, 1500, 1500};
-const int MAX_US[3] = {2000, 2000, 2000};
-const int SIGNO_RC[3] = {1, 1, 1};
-const int ZONA_MUERTA_US = 40;
+#include "PPM.h"
+#include "ControlOmni.h"
+
+// ESP32 DevKit V1 (ESP32-WROOM-32).
+constexpr uint8_t PIN_PPM = 27;
+
+// Pololu Dual VNH5019: cuatro motores y un EN/DIAG compartido.
+constexpr uint8_t M1_INA = 5;
+constexpr uint8_t M1_INB = 18;
+constexpr uint8_t M1_PWM = 22;
+constexpr uint8_t M2_INA = 17;
+constexpr uint8_t M2_INB = 19;
+constexpr uint8_t M2_PWM = 25;
+constexpr uint8_t M3_INA = 26;
+constexpr uint8_t M3_INB = 21;
+constexpr uint8_t M3_PWM = 14;
+constexpr uint8_t M4_INA = 32;
+constexpr uint8_t M4_INB = 33;
+constexpr uint8_t M4_PWM = 23;
+constexpr uint8_t PIN_EN_DIAG = 16;
+
+// La salida sólo manda la etapa de potencia; nunca conectar el solenoide al GPIO.
+constexpr uint8_t PIN_SOLENOIDE = 13;
+constexpr bool SOLENOIDE_ACTIVO_EN_HIGH = true;
+constexpr uint32_t PULSO_SOLENOIDE_MS = 150;
+
+constexpr uint32_t PWM_FRECUENCIA = 20000;
+constexpr uint8_t PWM_RESOLUCION = 8;
+constexpr int CENTRO = 1500;
+constexpr int ZONA_MUERTA = 20;
+constexpr float DUTY_MAX = 1.00f;
+constexpr uint32_t CONTROL_MS = 2;
+constexpr uint32_t TIMEOUT_PPM_MS = 100;
 
 struct Motor {
-  uint8_t ina, inb, pwm, diag;
-  int polaridad;
-  bool listo = false;
-  bool habilitado = false;
-  omni::Rampa rampa;
+  uint8_t ina;
+  uint8_t inb;
+  uint8_t pwm;
+  bool invertido;
 };
 
-// Frente, izquierda, atras, derecha. Los signos se ajustan con las ruedas al aire.
 Motor motores[4] = {
-  {25, 26, 27, 32, 1}, // Driver A, M1
-  {18, 19, 23, 33, 1}, // Driver A, M2
-  {4,   5, 14, 13, 1}, // Driver B, M1
-  {16, 17, 21, 22, 1}  // Driver B, M2
+  {M1_INA, M1_INB, M1_PWM, false},
+  {M2_INA, M2_INB, M2_PWM, true},
+  {M3_INA, M3_INB, M3_PWM, false},
+  {M4_INA, M4_INB, M4_PWM, false}
 };
-omni::Habilitacion permiso;
-bool falla = false;
-uint32_t ultimoPaso = 0, ultimoReporte = 0;
 
-void salidaBaja(uint8_t pin) {
-  digitalWrite(pin, LOW);
-  pinMode(pin, OUTPUT);
+omni::DisparoPorCambio disparoSolenoide;
+
+void escribirSolenoide(bool activo) {
+  digitalWrite(PIN_SOLENOIDE,
+               activo == SOLENOIDE_ACTIVO_EN_HIGH ? HIGH : LOW);
 }
 
-void cortarTodos() {
-  for (auto &m : motores) {
-    salidaBaja(m.diag);
-    m.habilitado = false;
-    m.rampa.cortar(millis());
-    if (m.listo && !ledcWrite(m.pwm, 0)) falla = true;
+void detenerMotores() {
+  for (auto &motor : motores) {
+    digitalWrite(motor.ina, LOW);
+    digitalWrite(motor.inb, LOW);
+    ledcWrite(motor.pwm, 0);
   }
 }
 
-bool aplicar(Motor &m, int pwm) {
-  if (pwm == 0) {
-    salidaBaja(m.diag);
-    m.habilitado = false;
-    return ledcWrite(m.pwm, 0);
+void aplicarMotor(Motor &motor, int velocidad) {
+  velocidad = constrain(velocidad, -255, 255);
+  if (motor.invertido) velocidad = -velocidad;
+
+  if (velocidad > 0) {
+    digitalWrite(motor.ina, HIGH);
+    digitalWrite(motor.inb, LOW);
+  } else if (velocidad < 0) {
+    digitalWrite(motor.ina, LOW);
+    digitalWrite(motor.inb, HIGH);
+  } else {
+    digitalWrite(motor.ina, LOW);
+    digitalWrite(motor.inb, LOW);
   }
-  digitalWrite(m.ina, pwm > 0 ? HIGH : LOW);
-  digitalWrite(m.inb, pwm < 0 ? HIGH : LOW);
-  if (!m.habilitado) {
-    pinMode(m.diag, INPUT);
-    delayMicroseconds(10); // Asentamiento del pull-up de EN/DIAG
-    m.habilitado = true;
+  ledcWrite(motor.pwm, abs(velocidad));
+}
+
+void configurarMotores() {
+  for (auto &motor : motores) {
+    pinMode(motor.ina, OUTPUT);
+    pinMode(motor.inb, OUTPUT);
+    ledcAttach(motor.pwm, PWM_FRECUENCIA, PWM_RESOLUCION);
   }
-  if (digitalRead(m.diag) == LOW) return false;
-  return ledcWrite(m.pwm, abs(pwm));
+  detenerMotores();
 }
 
 void setup() {
   Serial.begin(115200);
-  for (auto &m : motores) {
-    salidaBaja(m.diag);
-    salidaBaja(m.pwm);
-    salidaBaja(m.ina);
-    salidaBaja(m.inb);
-  }
-  for (auto &m : motores) {
-    m.listo = ledcAttach(m.pwm, 20000, 8);
-    if (!m.listo || !ledcWrite(m.pwm, 0)) falla = true;
-  }
-  cortarTodos();
-  receptor::iniciar();
-  Serial.println(SOLO_RECEPTOR ? "Modo receptor. Motores deshabilitados." : "Control RC. CH5 en OFF para habilitar.");
+  delay(500);
+
+  // Fijar primero el nivel inactivo evita un pulso accidental al arrancar.
+  escribirSolenoide(false);
+  pinMode(PIN_SOLENOIDE, OUTPUT);
+
+  ppm::comenzar(PIN_PPM);
+  pinMode(PIN_EN_DIAG, INPUT);
+  configurarMotores();
+
+  Serial.println("Robot omnidireccional listo");
+  Serial.println("PPM: CH1 giro, CH3 avance, CH4 lateral, CH5 solenoide");
 }
 
 void loop() {
-  uint16_t pulsos[4];
-  bool valido = receptor::leer(pulsos);
-  float ejes[3];
-  for (int i = 0; i < 3; ++i)
-    ejes[i] = SIGNO_RC[i] * omni::eje(pulsos[i], MIN_US[i], CENTRO_US[i], MAX_US[i], ZONA_MUERTA_US);
-  bool centrado = ejes[0] == 0 && ejes[1] == 0 && ejes[2] == 0;
-  permiso.actualizar(valido && !falla, pulsos[3], centrado);
+  static uint32_t ultimoControl = 0;
+  static uint32_t ultimoPrint = 0;
+  static uint32_t ultimaTramaValida = 0;
+  static uint16_t canales[ppm::MAX_CHANNELS] = {
+    1500, 1500, 1500, 1500, 1000, 1500
+  };
+  static uint8_t cantidad = 0;
 
-  for (auto &m : motores)
-    if (m.habilitado && digitalRead(m.diag) == LOW) falla = true;
+  uint32_t ahora = millis();
+  uint16_t nuevosCanales[ppm::MAX_CHANNELS] = {0};
+  uint8_t nuevaCantidad = 0;
 
-  if (SOLO_RECEPTOR || !permiso.activo || falla) {
-    cortarTodos();
-  } else if (uint32_t(millis() - ultimoPaso) >= PASO_MS) {
-    ultimoPaso = millis();
-    float ruedas[4];
-    // CH1: lateral, CH2: avance, CH4: giro.
-    omni::mezclar(ejes[1], ejes[0], GANANCIA_GIRO * ejes[2], ruedas);
+  if (ppm::leer(nuevosCanales, nuevaCantidad) && nuevaCantidad >= 5) {
+    cantidad = nuevaCantidad;
+    for (uint8_t i = 0; i < cantidad; ++i) canales[i] = nuevosCanales[i];
+    ultimaTramaValida = ahora;
+  }
+
+  bool ppmVigente = cantidad >= 5 &&
+                    uint32_t(ahora - ultimaTramaValida) <= TIMEOUT_PPM_MS;
+  bool driversOK = digitalRead(PIN_EN_DIAG) == HIGH;
+
+  bool solenoideActivo = disparoSolenoide.actualizar(
+    ppmVigente, canales[4], ahora, PULSO_SOLENOIDE_MS);
+  escribirSolenoide(solenoideActivo);
+
+  if (uint32_t(ahora - ultimoControl) < CONTROL_MS) return;
+  ultimoControl = ahora;
+
+  int objetivo[4] = {0, 0, 0, 0};
+  if (!ppmVigente || !driversOK) {
+    detenerMotores();
+  } else {
+    // El orden proviene de la configuración actual del transmisor/receptor.
+    float giro = omni::eje(canales[0], 1000, CENTRO, 2000, ZONA_MUERTA);    // CH1
+    float avance = omni::eje(canales[2], 1000, CENTRO, 2000, ZONA_MUERTA); // CH3
+    float lateral = omni::eje(canales[3], 1000, CENTRO, 2000, ZONA_MUERTA);// CH4
+    float salida[4];
+    omni::mezclar(avance, lateral, giro, salida);
+
     for (int i = 0; i < 4; ++i) {
-      Motor &m = motores[i];
-      int objetivo = lroundf(255 * DUTY_MAX * ruedas[i]) * m.polaridad;
-      int pwm = m.rampa.paso(objetivo, ultimoPaso, PAUSA_INVERSION_MS);
-      if (!aplicar(m, pwm)) {
-        falla = true;
-        cortarTodos();
-        break;
-      }
+      objetivo[i] = int(salida[i] * 255.0f * DUTY_MAX);
+      aplicarMotor(motores[i], objetivo[i]);
     }
   }
-  if (uint32_t(millis() - ultimoReporte) >= 250) {
-    ultimoReporte = millis();
-    Serial.printf("CH1=%u CH2=%u CH4=%u CH5=%u valido=%d habilitado=%d falla=%d PWM=%d,%d,%d,%d\n",
-                  pulsos[0], pulsos[1], pulsos[2], pulsos[3], valido,
-                  !SOLO_RECEPTOR && permiso.activo && !falla, falla,
-                  motores[0].rampa.actual, motores[1].rampa.actual,
-                  motores[2].rampa.actual, motores[3].rampa.actual);
+
+  if (uint32_t(ahora - ultimoPrint) >= 250) {
+    ultimoPrint = ahora;
+    Serial.printf(
+      "CH1=%u CH2=%u CH3=%u CH4=%u CH5=%u | PPM=%s DIAG=%s SOL=%s | M=%d,%d,%d,%d\n",
+      canales[0], canales[1], canales[2], canales[3], canales[4],
+      ppmVigente ? "OK" : "FAIL", driversOK ? "OK" : "FAIL",
+      solenoideActivo ? "ON" : "OFF",
+      objetivo[0], objetivo[1], objetivo[2], objetivo[3]);
   }
-  delay(1);
 }

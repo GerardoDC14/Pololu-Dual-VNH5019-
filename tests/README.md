@@ -6,15 +6,16 @@ Desde la raíz del repositorio:
 g++ -std=c++17 -Wall -Wextra -Werror tests/control_omni_test.cpp -o /tmp/control_omni_test
 /tmp/control_omni_test
 
-g++ -std=c++17 -Wall -Wextra -Werror -Itests/mocks tests/receptor_pwm_test.cpp -o /tmp/receptor_pwm_test
-/tmp/receptor_pwm_test
+g++ -std=c++17 -Wall -Wextra -Werror -Itests/mocks tests/ppm_test.cpp -o /tmp/ppm_test
+/tmp/ppm_test
 ```
 
 `control_omni_test.cpp`: signos de la mezcla, normalización, zona muerta,
-secuencia OFF/ON, rampa, inversión y desbordamiento del temporizador.
+pulso de solenoide por cambio, secuencia OFF/ON heredada, rampa, inversión y
+desbordamiento del temporizador.
 
-`receptor_pwm_test.cpp`: flancos PWM simulados, validación de periodo y ancho,
-timeout, recuperación y desbordamiento de `micros()`.
+`ppm_test.cpp`: trama PPM simulada, separación de canales, conteo y rechazo de
+intervalos fuera de rango.
 `mocks/Arduino.h` sólo se usa para esta prueba en la computadora.
 
 Compilar el sketch con el core ESP32 instalado:
@@ -23,5 +24,4 @@ Compilar el sketch con el core ESP32 instalado:
 arduino-cli compile --fqbn esp32:esp32:esp32 arduino/esp32_omni4_rc
 ```
 
-`SOLO_RECEPTOR` selecciona lectura o control de motores. El cableado, polaridades
-y failsafe se ajustan con el receptor y la base según [omni4.md](../docs/omni4.md).
+El pinout, los canales y el failsafe están descritos en el [README](../README.md#configuración-actual-devkit-v1-ppm-y-solenoide).

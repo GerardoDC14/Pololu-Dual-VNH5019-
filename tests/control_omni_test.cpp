@@ -25,6 +25,15 @@ int main() {
   assert(omni::eje(2000,1000,1500,2000,40)==1);
   assert(omni::eje(900,1000,1500,2000,40)==-1);
 
+  omni::DisparoPorCambio disparo;
+  assert(!disparo.actualizar(true,1000,10,150)); // estado inicial: no dispara
+  assert(disparo.actualizar(true,2000,20,150));  // OFF -> ON
+  assert(disparo.actualizar(true,2000,169,150));
+  assert(!disparo.actualizar(true,2000,170,150));
+  assert(disparo.actualizar(true,1000,200,150));  // ON -> OFF también dispara
+  assert(!disparo.actualizar(false,1000,210,150));
+  assert(!disparo.actualizar(true,2000,220,150)); // reconexión: nuevo estado inicial
+
   omni::Habilitacion h;
   h.actualizar(true,2000,true); assert(!h.activo);
   h.actualizar(true,1000,true); h.actualizar(true,2000,false); assert(!h.activo);

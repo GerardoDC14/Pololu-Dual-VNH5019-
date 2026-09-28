@@ -1,14 +1,78 @@
 # Pololu Dual VNH5019 + ESP32
 
-Control de motores para la base omnidireccional con **ESP32-WROOM-32** y
-**Pololu Dual VNH5019**. La prueba de M1 usa comandos seriales; el borrador de
-la base completa lee el **FS-iA6** y distribuye las referencias a cuatro motores
-mediante dos drivers.
+Control de motores para la base omnidireccional con **ESP32 DevKit V1
+(ESP32-WROOM-32)** y dos **Pololu Dual VNH5019**. El control actual recibe una
+trama **PPM compuesta** del receptor, mezcla tres ejes y gobierna cuatro motores.
+CH5 dispara durante un tiempo limitado la salida para un solenoide.
 
 - [Prueba de M1 por serial](arduino/esp32_motor1/esp32_motor1.ino)
-- [Borrador de cuatro motores por RC](arduino/esp32_omni4_rc/esp32_omni4_rc.ino)
-- [Cableado y puesta en marcha del omnidireccional](docs/omni4.md)
+- [Control actual de cuatro motores por PPM](arduino/esp32_omni4_rc/esp32_omni4_rc.ino)
 - [Manual del driver (PDF)](dual_vnh5019_motor_driver_shield.PDF)
+
+## Configuración actual: DevKit V1, PPM y solenoide
+
+Los números siguientes son **GPIO**, no posiciones físicas del conector. Esta
+asignación corresponde al DevKit V1 con módulo ESP32-WROOM-32.
+
+| Función | GPIO | Conexión |
+| --- | ---: | --- |
+| Entrada PPM compuesta | 27 | Salida PPM del receptor, adaptada a 3.3 V |
+| Motor 1 INA / INB / PWM | 5 / 18 / 22 | Driver A, canal M1 |
+| Motor 2 INA / INB / PWM | 17 / 19 / 25 | Driver A, canal M2 |
+| Motor 3 INA / INB / PWM | 26 / 21 / 14 | Driver B, canal M1 |
+| Motor 4 INA / INB / PWM | 32 / 33 / 23 | Driver B, canal M2 |
+| EN/DIAG compartido | 16 | EN/DIAG de los canales utilizados |
+| Mando de solenoide | 13 | Entrada de una etapa de potencia, activa en HIGH |
+
+VDD de los VNH5019 se conecta a 3V3 y todas las tierras deben ser comunes. El
+GPIO 5 es un pin de arranque (*strapping*): no agregarle una resistencia o una
+carga que fuerce un nivel incompatible durante el reset. GPIO 27 recibe como
+máximo 3.3 V; si la salida PPM del receptor es de 5 V debe usarse un adaptador
+de nivel.
+
+### Cómo se lee PPM
+
+Sólo se utiliza **un cable de señal** entre el receptor y GPIO 27. `PPM.h`
+registra por interrupción cada flanco ascendente. El tiempo entre flancos, en
+microsegundos, representa el valor consecutivo de cada canal; un intervalo
+mayor de 3000 µs delimita la trama. Se aceptan intervalos de canal entre 800 y
+2200 µs y se almacenan hasta seis canales.
+
+El programa exige al menos cinco canales y considera perdida la señal si no
+recibe una trama válida durante 100 ms. En ese caso pone en cero los cuatro
+motores y apaga el solenoide. El mapeo comprobado en el código compartido es:
+
+| Canal PPM | Uso actual | Índice en `canales[]` |
+| --- | --- | ---: |
+| CH1 | Giro | 0 |
+| CH2 | Recibido y mostrado; no interviene en el control | 1 |
+| CH3 | Avance / reversa | 2 |
+| CH4 | Movimiento lateral | 3 |
+| CH5 | Disparo del solenoide por cambio de estado | 4 |
+
+Por tanto, no son cinco entradas PWM independientes ni hay cuatro canales de
+movimiento: se decodifican cinco canales de una trama PPM, pero actualmente hay
+tres ejes de movimiento, un switch y un canal sin usar.
+
+### Pulso del solenoide por cambio de CH5
+
+CH5 ya no habilita o deshabilita los motores. Los valores menores de 1300 µs se
+interpretan como un estado y los mayores de 1700 µs como el otro; la zona
+intermedia no cambia el estado registrado. Cada transición **OFF→ON u ON→OFF**
+activa GPIO 13 durante `PULSO_SOLENOIDE_MS`, inicialmente **150 ms**, y después
+lo apaga automáticamente aunque la palanca permanezca en su nueva posición.
+
+El primer estado válido después del arranque o de una pérdida de señal sólo se
+usa como referencia y no dispara el solenoide. Esto evita golpes involuntarios
+al encender o reconectar el receptor. Cambiar `PULSO_SOLENOIDE_MS` únicamente
+después de confirmar el tiempo permitido por el solenoide y el mecanismo.
+
+**No conectar una bobina ni un relé desnudo directamente al ESP32.** GPIO 13
+debe mandar un MOSFET lógico o un módulo de relevador compatible con lógica de
+3.3 V. Una bobina DC requiere diodo de rueda libre colocado en paralelo con la
+bobina, alimentación separada dimensionada para su corriente y tierra común
+con el ESP32. Si el módulo es activo en LOW, cambiar
+`SOLENOIDE_ACTIVO_EN_HIGH` a `false`.
 
 ## Hardware de la prueba de M1
 
@@ -301,33 +365,24 @@ T = -lateral + giro
 D =  avance  + giro
 ```
 
-`giro` incluye `GANANCIA_GIRO = 0.5`. Si alguna salida supera magnitud 1,
-se dividen **las cuatro** entre el máximo absoluto para conservar sus proporciones.
-Después se aplica `DUTY_MAX = 0.35`, se convierte a 0–255 y se ajusta la polaridad.
-Estas entradas son referencias normalizadas; todavía no son m/s ni rad/s.
+Los tres ejes entran a la mezcla con ganancia 1. Si alguna salida supera
+magnitud 1, se dividen **las cuatro** entre el máximo absoluto para conservar
+sus proporciones. Después se aplica `DUTY_MAX = 1.00`, se convierte a 0–255 y
+se invierte M2 según la configuración actual. Estas entradas son referencias
+normalizadas; todavía no son m/s ni rad/s.
 
 La matriz da velocidades de rueda. Usar su mezcla como duty sirve para empezar,
 pero no compensa diferencias entre motores o carga. Para cerrar velocidad,
 la salida de la matriz será la referencia de un PI por rueda con encoder.
 Los radios, distancias y relación de transmisión se incorporan en esa etapa.
 
-### Receptor y rampas de cuatro motores
+### Receptor y control de cuatro motores
 
-El FS-iA6 se lee por sus salidas PWM: CH1 lateral, CH2 avance, CH4 giro y CH5
-habilitación. No se usa iBUS. Los canales se miden por interrupciones y se revisa
-su vigencia antes de actualizar las salidas.
-
-En el borrador RC, una inversión **sí baja por rampa hasta cero**, espera 1 s y
-sube en el nuevo sentido. Cada rueda lleva su propio estado. El paso sigue siendo
-una cuenta PWM cada 10 ms; desde 35% hasta −35% son aproximadamente
-0.89 s de bajada + 1 s de espera + 0.89 s de subida. Durante esas transiciones
-las proporciones entre ruedas pueden variar. CH5 en OFF, pérdida de pulsos o falla
-cortan las cuatro salidas inmediatamente.
-
-El sketch inicia con `SOLO_RECEPTOR = true`. Primero se revisan los pulsos y el
-failsafe, después se cambia a `false` para probar los motores. El pinout completo,
-la adaptación de señales y la secuencia de habilitación están en
-[docs/omni4.md](docs/omni4.md).
+La versión actual usa una sola salida PPM del receptor. La mezcla se aplica
+directamente como duty PWM de 20 kHz y 8 bits, con `DUTY_MAX = 1.00`. No usa la
+rampa ni la pausa de inversión disponibles en `ControlOmni.h`: un cambio brusco
+del stick puede producir un cambio brusco de duty o sentido. La pérdida de PPM
+o un nivel bajo en EN/DIAG detiene los cuatro motores de inmediato.
 
 ## Archivos y referencias
 
@@ -340,7 +395,7 @@ arduino/
   esp32_omni4_rc/
     esp32_omni4_rc.ino
     ControlOmni.h
-    ReceptorPWM.h
+    PPM.h
 docs/
   omni4.md
   images/
@@ -350,7 +405,7 @@ docs/
 tests/
   README.md
   control_omni_test.cpp
-  receptor_pwm_test.cpp
+  ppm_test.cpp
   mocks/Arduino.h
 dual_vnh5019_motor_driver_shield.PDF
 ```
