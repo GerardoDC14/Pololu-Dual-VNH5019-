@@ -360,8 +360,9 @@ la tracción positiva de cada rueda; los signos eléctricos se ajustan después 
 
 ### Cinemática
 
-Para una rueda en $(x_i,y_i)$, con dirección de tracción unitaria
-$\mathbf{t}_i=(t_{ix},t_{iy})$ y radio $r$, la velocidad angular requerida es:
+Para la rueda $i$, situada en $(x_i,y_i)$, sean $t_{ix}$ y $t_{iy}$ las
+componentes de su dirección unitaria de tracción. Para un radio $r$, la
+velocidad angular requerida es:
 
 $$
 \dot\phi_i = \frac{t_{ix}(v_x-\omega y_i)+t_{iy}(v_y+\omega x_i)}{r}
