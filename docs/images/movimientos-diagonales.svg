@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="430" viewBox="0 0 900 430">
+<defs>
+  <marker id="mov" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#0f766e"/></marker>
+  <marker id="rot" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#7c3aed"/></marker>
+</defs>
+<rect width="900" height="430" rx="12" fill="#f8fafc"/>
+<g font-family="Arial,sans-serif" fill="#182b45">
+  <text x="30" y="38" font-size="22" font-weight="bold">Signos lógicos con frente sobre la diagonal F–I</text>
+  <text x="30" y="63" font-size="14">Orden en cada bloque: F, I, T, D · signos previos a la polaridad eléctrica</text>
+  <g transform="translate(45 92)">
+    <g><rect width="245" height="125" rx="10" fill="white" stroke="#cbd5e1"/><text x="18" y="28" font-size="17" font-weight="bold">Adelante</text><path d="M198 93L153 48" stroke="#0f766e" stroke-width="5" marker-end="url(#mov)"/><text x="18" y="62" font-size="22">F+  I−  T−  D+</text></g>
+    <g transform="translate(283)"><rect width="245" height="125" rx="10" fill="white" stroke="#cbd5e1"/><text x="18" y="28" font-size="17" font-weight="bold">Atrás</text><path d="M153 48L198 93" stroke="#0f766e" stroke-width="5" marker-end="url(#mov)"/><text x="18" y="62" font-size="22">F−  I+  T+  D−</text></g>
+    <g transform="translate(566)"><rect width="245" height="125" rx="10" fill="white" stroke="#cbd5e1"/><text x="18" y="28" font-size="17" font-weight="bold">Izquierda</text><path d="M198 48L153 93" stroke="#0f766e" stroke-width="5" marker-end="url(#mov)"/><text x="18" y="62" font-size="22">F+  I+  T−  D−</text></g>
+    <g transform="translate(0 155)"><rect width="245" height="125" rx="10" fill="white" stroke="#cbd5e1"/><text x="18" y="28" font-size="17" font-weight="bold">Derecha</text><path d="M153 93L198 48" stroke="#0f766e" stroke-width="5" marker-end="url(#mov)"/><text x="18" y="62" font-size="22">F−  I−  T+  D+</text></g>
+    <g transform="translate(283 155)"><rect width="245" height="125" rx="10" fill="white" stroke="#cbd5e1"/><text x="18" y="28" font-size="17" font-weight="bold">Antihorario</text><path d="M180 93A38 38 0 1 1 196 61" fill="none" stroke="#7c3aed" stroke-width="5" marker-end="url(#rot)"/><text x="18" y="62" font-size="22">F+  I+  T+  D+</text></g>
+    <g transform="translate(566 155)"><rect width="245" height="125" rx="10" fill="white" stroke="#cbd5e1"/><text x="18" y="28" font-size="17" font-weight="bold">Horario</text><path d="M196 61A38 38 0 1 1 180 93" fill="none" stroke="#7c3aed" stroke-width="5" marker-end="url(#rot)"/><text x="18" y="62" font-size="22">F−  I−  T−  D−</text></g>
+  </g>
+  <text x="30" y="405" font-size="14" fill="#475569">El signo indica el sentido sobre la tracción tangencial propia de cada rueda.</text>
+</g>
+</svg>

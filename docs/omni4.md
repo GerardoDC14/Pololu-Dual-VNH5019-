@@ -33,7 +33,22 @@ El código interpreta EN/DIAG bajo como falla y corta los cuatro motores.
 
 Los canales de movimiento se convierten de 1000–2000 µs a −1…1, con centro en
 1500 µs y zona muerta de ±20 µs. La mezcla produce referencias para las ruedas
-frontal, izquierda, trasera y derecha. M2 está invertido en software.
+F, I, T y D. Estos nombres identifican sus posiciones físicas; el frente del
+robot está sobre la diagonal entre F e I y la izquierda sobre la diagonal entre
+I y T. M2 está invertido en software.
+
+| Movimiento | F | I | T | D |
+| --- | ---: | ---: | ---: | ---: |
+| Adelante | + | − | − | + |
+| Atrás | − | + | + | − |
+| Izquierda | + | + | − | − |
+| Derecha | − | − | + | + |
+| Antihorario | + | + | + | + |
+| Horario | − | − | − | − |
+
+Los signos son lógicos y se leen respecto a la tracción positiva de cada rueda,
+antes de la inversión eléctrica. Por eso dos ruedas que colaboran en el mismo
+avance pueden mostrar signos opuestos.
 
 Un intervalo entre flancos mayor de 3000 µs marca la separación entre tramas.
 Los intervalos de canal aceptados son 800–2200 µs. Se exigen cinco canales y una

@@ -344,15 +344,19 @@ señal baja en EN/DIAG corta los cuatro motores.
 
 ## Base omnidireccional en cruz
 
-La base lleva cuatro ruedas omni con tracción tangencial: **F** al frente,
-**I** a la izquierda, **T** atrás y **D** a la derecha. El orden en el código
-es **F, I, T, D**. Driver A controla F/I y driver B controla T/D.
+La base lleva cuatro ruedas omni con tracción tangencial. Los identificadores
+físicos se conservan como **F, I, T, D**, en ese orden en el código: F ocupa la
+posición superior del dibujo, I la izquierda, T la inferior y D la derecha.
+Driver A controla F/I y driver B controla T/D. Las letras identifican ruedas y
+conexiones; ya no definen los ejes de movimiento.
 
 ![Ejes de la base y sentido positivo de las ruedas](docs/images/base-cruz.svg)
 
-Tomamos `x` hacia el frente, `y` hacia la izquierda y giro positivo antihorario,
-vistos desde arriba. Las flechas azules indican el sentido positivo de tracción
-de cada rueda. Los signos eléctricos se ajustan después con `polaridad`.
+El **frente del robot** y la dirección del solenoide se definen sobre la diagonal
+entre F e I. El eje `+y`, izquierda del robot, queda sobre la diagonal entre I y
+T. El giro positivo es antihorario visto desde arriba. Las flechas azules indican
+la tracción positiva de cada rueda; los signos eléctricos se ajustan después con
+`polaridad`.
 
 ### Cinemática
 
@@ -363,7 +367,8 @@ $$
 \dot\phi_i = \frac{t_{ix}(v_x-\omega y_i)+t_{iy}(v_y+\omega x_i)}{r}
 $$
 
-Con las cuatro ruedas a distancia $L$ del centro:
+Al expresar la misma geometría en los nuevos ejes diagonales, y con las cuatro
+ruedas a distancia $L$ del centro:
 
 $$
 \begin{bmatrix}
@@ -374,10 +379,10 @@ $$
 \end{bmatrix}
 =\frac{1}{r}
 \begin{bmatrix}
-0 & 1 & L\\
--1 & 0 & L\\
-0 & -1 & L\\
-1 & 0 & L
+1/\sqrt{2} & 1/\sqrt{2} & L\\
+-1/\sqrt{2} & 1/\sqrt{2} & L\\
+-1/\sqrt{2} & -1/\sqrt{2} & L\\
+1/\sqrt{2} & -1/\sqrt{2} & L
 \end{bmatrix}
 \begin{bmatrix}v_x\\v_y\\\omega\end{bmatrix}
 $$
@@ -387,41 +392,56 @@ $\dot\phi_i$ en rad/s. $L$ se mide al centro de contacto de la rueda.
 Si las distancias no son iguales, se usa la posición real de cada rueda en
 la expresión general.
 
-| Movimiento positivo | F | I | T | D |
-| --- | --- | --- | --- | --- |
-| Avance $v_x$ | 0 | − | 0 | + |
-| Lateral izquierdo $v_y$ | + | 0 | − | 0 |
-| Giro antihorario $\omega$ | + | + | + | + |
+| Orden del piloto | F | I | T | D |
+| --- | ---: | ---: | ---: | ---: |
+| Adelante | + | − | − | + |
+| Atrás | − | + | + | − |
+| Izquierda | + | + | − | − |
+| Derecha | − | − | + | + |
+| Giro antihorario | + | + | + | + |
+| Giro horario | − | − | − | − |
+
+![Signos lógicos para los seis movimientos básicos](docs/images/movimientos-diagonales.svg)
+
+Dos ruedas pueden tener signos lógicos opuestos y, aun así, aportar fuerza en
+la misma dirección del chasis: cada signo se interpreta sobre la flecha de
+tracción propia de esa rueda. Por ejemplo, en avance F gira positivo e I
+negativo, pero ambas contribuciones tienen componente hacia la diagonal F–I.
 
 Para recuperar la velocidad de la base a partir de velocidades medidas:
 
 $$
-v_x=\frac{r}{2}(\dot\phi_D-\dot\phi_I),\qquad
-v_y=\frac{r}{2}(\dot\phi_F-\dot\phi_T),\qquad
+v_x=\frac{r}{2\sqrt{2}}(\dot\phi_F-\dot\phi_I-\dot\phi_T+\dot\phi_D),\qquad
+v_y=\frac{r}{2\sqrt{2}}(\dot\phi_F+\dot\phi_I-\dot\phi_T-\dot\phi_D),\qquad
 \omega=\frac{r}{4L}(\dot\phi_F+\dot\phi_I+\dot\phi_T+\dot\phi_D)
 $$
 
 Estas relaciones suponen rodadura ideal en la dirección de tracción y libertad
-lateral por los rodillos. La derivación sigue la proyección de la velocidad del
-chasis sobre cada rueda descrita en
+lateral por los rodillos. La formulación general por proyección y apilamiento de
+las restricciones de cada rueda se describe en
 [Modern Robotics, sección 13.2](https://modernrobotics.northwestern.edu/nu-gm-book-resource/13-2-omnidirectional-wheeled-mobile-robots-part-1-of-2/).
+Una configuración de cuatro ruedas con direcciones a 45°, 135°, 225° y 315° se
+documenta también en este
+[artículo de IEEE sobre cinemática inversa y odometría](https://eprints.undip.ac.id/79371/1/C14-Development_of_Omni-Wheeled_Mobile_Robot_Based-on_Inverse_Kinematics_and_Odometry.pdf).
 
 ### Mezcla de cuatro motores
 
 Por ahora trabajamos en lazo abierto. Los sticks se normalizan a -1…1 y se mezclan:
 
 ```text
-F =  lateral + giro
-I = -avance  + giro
-T = -lateral + giro
-D =  avance  + giro
+F =  avance + lateral + giro
+I = -avance + lateral + giro
+T = -avance - lateral + giro
+D =  avance - lateral + giro
 ```
 
-Los tres ejes entran a la mezcla con ganancia 1. Si alguna salida supera
-magnitud 1, se dividen **las cuatro** entre el máximo absoluto para conservar
-sus proporciones. Después se aplica `DUTY_MAX = 1.00`, se convierte a 0–255 y
-se invierte M2 según la configuración actual. Estas entradas son referencias
-normalizadas; todavía no son m/s ni rad/s.
+La ecuación física contiene el factor $1/\sqrt{2}$ en la traslación. El mezclador
+lo omite deliberadamente porque trabaja con mandos y PWM normalizados, no con
+velocidades en unidades SI; así, una orden cardinal pura puede aprovechar el
+rango completo de las cuatro ruedas. Si alguna salida supera magnitud 1, se
+dividen **las cuatro** entre el máximo absoluto para conservar sus proporciones.
+Después se aplica `DUTY_MAX = 1.00`, se convierte a 0–255 y se aplican las
+inversiones eléctricas configuradas.
 
 La matriz da velocidades de rueda. Usar su mezcla como duty sirve para empezar,
 pero no compensa diferencias entre motores o carga. Para cerrar velocidad,
@@ -469,6 +489,7 @@ docs/
     conexiones-driver.jpg
     alimentacion-driver.jpg
     base-cruz.svg
+    movimientos-diagonales.svg
 tests/
   README.md
   control_campo_test.cpp

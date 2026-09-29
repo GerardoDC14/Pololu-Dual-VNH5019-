@@ -18,13 +18,9 @@ inline float limitar(float x, float a, float b) {
 // CINEMATICA OMNIDIRECCIONAL
 // =============================================================================
 //
-// Orden de las ruedas:
-// 0 = frente
-// 1 = izquierda
-// 2 = atras
-// 3 = derecha
-//
-// Traccion tangencial positiva.
+// Orden fisico fijo: F, I, T, D.
+// El frente del robot es la diagonal entre F e I; +lateral apunta entre I y T.
+// Los signos son de traccion tangencial, antes de aplicar la polaridad electrica.
 // =============================================================================
 
 inline void mezclar(
@@ -34,10 +30,10 @@ inline void mezclar(
   float salida[4]
 ) {
 
-  salida[0] = lateral + giro;
-  salida[1] = -avance + giro;
-  salida[2] = -lateral + giro;
-  salida[3] = avance + giro;
+  salida[0] = avance + lateral + giro;
+  salida[1] = -avance + lateral + giro;
+  salida[2] = -avance - lateral + giro;
+  salida[3] = avance - lateral + giro;
 
 
   // Normalizar para que ninguna rueda supere ±1

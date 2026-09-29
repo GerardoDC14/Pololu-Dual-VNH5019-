@@ -82,11 +82,11 @@ struct Motor
 
 Motor motores[4] =
 {
-    // INA       INB       PWM       Invertido
-    {M1_INA,     M1_INB,   M1_PWM,   false},
-    {M2_INA,     M2_INB,   M2_PWM,   true },   // M2 invertido
-    {M3_INA,     M3_INB,   M3_PWM,   false},
-    {M4_INA,     M4_INB,   M4_PWM,   false}
+    // Rueda  INA       INB       PWM       Invertido
+    /* F */ {M1_INA,     M1_INB,   M1_PWM,   false},
+    /* I */ {M2_INA,     M2_INB,   M2_PWM,   true },
+    /* T */ {M3_INA,     M3_INB,   M3_PWM,   false},
+    /* D */ {M4_INA,     M4_INB,   M4_PWM,   false}
 };
 
 

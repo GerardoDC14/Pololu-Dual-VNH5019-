@@ -7,12 +7,13 @@ inline float limitar(float x, float a, float b) {
   return x < a ? a : (x > b ? b : x);
 }
 
-// Orden: frente, izquierda, atras, derecha. Traccion tangencial positiva.
+// Orden fisico fijo: F, I, T, D. El frente es la diagonal entre F e I.
+// +lateral apunta entre I y T. Signos previos a la polaridad electrica.
 inline void mezclar(float avance, float lateral, float giro, float salida[4]) {
-  salida[0] = lateral + giro;
-  salida[1] = -avance + giro;
-  salida[2] = -lateral + giro;
-  salida[3] = avance + giro;
+  salida[0] = avance + lateral + giro;
+  salida[1] = -avance + lateral + giro;
+  salida[2] = -avance - lateral + giro;
+  salida[3] = avance - lateral + giro;
   float escala = 1.0f;
   for (int i = 0; i < 4; ++i) escala = fmaxf(escala, fabsf(salida[i]));
   for (int i = 0; i < 4; ++i) salida[i] /= escala;

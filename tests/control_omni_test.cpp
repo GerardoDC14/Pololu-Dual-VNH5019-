@@ -6,13 +6,19 @@ bool cerca(float a, float b) { return std::fabs(a - b) < 1e-5f; }
 int main() {
   float w[4];
   omni::mezclar(1, 0, 0, w);
-  assert(cerca(w[0], 0) && cerca(w[1], -1) && cerca(w[2], 0) && cerca(w[3], 1));
+  assert(cerca(w[0], 1) && cerca(w[1], -1) && cerca(w[2], -1) && cerca(w[3], 1));
+  omni::mezclar(-1, 0, 0, w);
+  assert(cerca(w[0], -1) && cerca(w[1], 1) && cerca(w[2], 1) && cerca(w[3], -1));
   omni::mezclar(0, 1, 0, w);
-  assert(cerca(w[0], 1) && cerca(w[1], 0) && cerca(w[2], -1) && cerca(w[3], 0));
+  assert(cerca(w[0], 1) && cerca(w[1], 1) && cerca(w[2], -1) && cerca(w[3], -1));
+  omni::mezclar(0, -1, 0, w);
+  assert(cerca(w[0], -1) && cerca(w[1], -1) && cerca(w[2], 1) && cerca(w[3], 1));
   omni::mezclar(0, 0, 1, w);
   for (float v : w) assert(cerca(v, 1));
+  omni::mezclar(0, 0, -1, w);
+  for (float v : w) assert(cerca(v, -1));
   omni::mezclar(1, .5f, .5f, w);
-  assert(cerca(w[0], 2.0f/3) && cerca(w[1], -1.0f/3) && cerca(w[2], 0) && cerca(w[3], 1));
+  assert(cerca(w[0], 1) && cerca(w[1], 0) && cerca(w[2], -.5f) && cerca(w[3], .5f));
   for (int x = -10; x <= 10; ++x)
     for (int y = -10; y <= 10; ++y)
       for (int z = -10; z <= 10; ++z) {

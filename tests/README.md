@@ -13,7 +13,8 @@ g++ -std=c++17 -Wall -Wextra -Werror -Itests/mocks tests/ppm_test.cpp -o /tmp/pp
 /tmp/ppm_test
 ```
 
-`control_omni_test.cpp`: signos de la mezcla, normalización, zona muerta,
+`control_omni_test.cpp`: signos de los seis movimientos básicos con frente F–I,
+normalización, zona muerta,
 pulso de solenoide por cambio, secuencia OFF/ON heredada, rampa, inversión y
 desbordamiento del temporizador.
 

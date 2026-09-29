@@ -3,7 +3,9 @@
 Las variantes BNO055 y MPU6050 conservan la mezcla de cuatro motores, pero
 separan la dirección de traslación de la orientación del chasis. Al encender,
 la orientación física del robot se define como 0°. El robot debe estar inmóvil
-y con el solenoide apuntando hacia la portería contraria.
+y con el solenoide apuntando hacia la portería contraria. El frente del chasis
+es la diagonal entre las ruedas F e I; ése es el eje que la IMU conserva como
+referencia inicial.
 
 ## Canales
 
@@ -31,7 +33,7 @@ avanceRobot =  cos(yaw)·avanceCampo + sin(yaw)·lateralCampo
 lateralRobot = -sin(yaw)·avanceCampo + cos(yaw)·lateralCampo
 ```
 
-Los valores relativos al robot entran después a la mezcla existente. Por ello,
+Los valores relativos al robot entran después a la mezcla diagonal F–I. Por ello,
 empujar CH3 hacia adelante sigue moviendo el robot hacia la portería aunque el
 chasis esté girado.
 
