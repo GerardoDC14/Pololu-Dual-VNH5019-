@@ -79,4 +79,50 @@ struct ControlRumbo {
   }
 };
 
+// CH6 ordena alineaciones; en reposo no mantiene un PID que haga girar ruedas.
+struct RumboHibrido {
+  ControlRumbo control;
+  bool alineando = false;
+  bool enMovimiento = false;
+  bool reposo = true;
+
+  void detener(float yaw) {
+    control.fijar(yaw);
+    alineando = enMovimiento = false;
+    reposo = true;
+  }
+
+  float paso(bool cambioModo, int8_t modo, float yaw, float velocidadYaw,
+             float avance, float lateral, float stickGiro, float dt,
+             float velocidadReferencia, float kp, float ki, float kd) {
+    if (cambioModo) {
+      if (modo == 0) detener(yaw);
+      else {
+        control.fijar(modo > 0 ? 0.0f : 180.0f);
+        alineando = true;
+      }
+    }
+    bool traslacion = fabsf(avance) > 0.001f || fabsf(lateral) > 0.001f;
+    bool giroManual = fabsf(stickGiro) > 0.001f;
+    if (giroManual) {
+      if (alineando || !enMovimiento) control.fijar(yaw);
+      alineando = false;
+      control.mover(stickGiro, dt, velocidadReferencia);
+      // El objetivo no puede adelantarse más de 40° al rumbo real.
+      float adelanto = limitar(envolverGrados(control.referencia - yaw), -40.0f, 40.0f);
+      control.referencia = envolverGrados(yaw + adelanto);
+    } else if (traslacion && !enMovimiento && !alineando) {
+      control.fijar(yaw); // mantener el rumbo al iniciar la traslación
+    }
+    float error = envolverGrados(control.referencia - yaw);
+    bool dentro = fabsf(error) <= 2.0f && fabsf(velocidadYaw) <= 5.0f;
+    if (alineando && dentro) alineando = false;
+    reposo = !traslacion && !giroManual && !alineando;
+    enMovimiento = traslacion || giroManual;
+    if (reposo) { control.fijar(yaw); return 0.0f; }
+    if (!giroManual && dentro) { control.integral = 0.0f; return 0.0f; }
+    return control.calcular(yaw, velocidadYaw, dt, kp, ki, kd);
+  }
+};
+
 } // namespace campo

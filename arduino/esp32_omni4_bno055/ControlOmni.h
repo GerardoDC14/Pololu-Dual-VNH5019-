@@ -35,13 +35,18 @@ struct DisparoPorCambio {
   bool estado = false;
   bool activo = false;
   uint32_t inicio = 0;
+  uint32_t ultimoDisparo = 0;
+  bool huboDisparo = false;
 
-  bool actualizar(bool valido, uint16_t pulso, uint32_t ahora, uint32_t duracion) {
+  bool actualizar(bool valido, uint16_t pulso, uint32_t ahora, uint32_t duracion,
+                  uint32_t intervaloMinimo = 1000) {
     if (!valido) {
       inicializado = false;
       activo = false;
       return false;
     }
+
+    if (activo && uint32_t(ahora - inicio) >= duracion) activo = false;
 
     bool estadoNuevo = estado;
     bool estadoDefinido = false;
@@ -59,8 +64,12 @@ struct DisparoPorCambio {
         estado = estadoNuevo;
       } else if (estadoNuevo != estado) {
         estado = estadoNuevo;
-        inicio = ahora;
-        activo = true;
+        // Los cambios durante el pulso no lo prolongan. La pausa limita
+        // repeticiones; el estado del switch se sigue actualizando.
+        if (!activo && (!huboDisparo || uint32_t(ahora - ultimoDisparo) >= intervaloMinimo)) {
+          inicio = ultimoDisparo = ahora;
+          huboDisparo = activo = true;
+        }
       }
     }
 
@@ -118,6 +127,22 @@ struct Rampa {
     if (actual == 0 && previo != 0) ceroDesde = ahora;
     if (actual != 0) ultimoSigno = actual > 0 ? 1 : -1;
     return actual;
+  }
+};
+}
+
+namespace omni {
+// Exige sticks centrados continuamente antes de aceptar movimiento/disparo.
+struct ArranqueSeguro {
+  bool listo = false, contando = false;
+  uint32_t desde = 0;
+  bool actualizar(bool valido, bool centrado, uint32_t ahora, uint32_t espera = 500) {
+    if (!valido) { listo = contando = false; return false; }
+    if (listo) return true;
+    if (!centrado) { contando = false; return false; }
+    if (!contando) { desde = ahora; contando = true; }
+    if (uint32_t(ahora - desde) >= espera) listo = true;
+    return listo;
   }
 };
 }
