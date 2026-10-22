@@ -13,6 +13,9 @@ const uint8_t DEFAULT_PINS[MAX_CHANNELS] = {27, UNASSIGNED_PIN, 15, 34, 35, 12};
 volatile uint16_t pwmChannels[MAX_CHANNELS] = {1500, 1500, 1500, 1500, 1500, 1500};
 volatile uint32_t riseTimes[MAX_CHANNELS] = {0};
 volatile uint32_t lastUpdateUs[MAX_CHANNELS] = {0};
+volatile bool esperandoBajada[MAX_CHANNELS] = {};
+volatile uint8_t recibidos = 0, actualizados = 0;
+uint8_t requeridos = 0;
 volatile uint32_t publicadaUs = 0;
 volatile bool pendiente = false;
 volatile uint32_t tramasValidas = 0;
@@ -30,17 +33,24 @@ void IRAM_ATTR __attribute__((noinline)) handleInterrupt(uint8_t ch) {
   portENTER_CRITICAL_ISR(&pwmMux);
   if (state) {
     riseTimes[ch] = now;
+    esperandoBajada[ch] = true;
   } else {
     uint32_t pulseWidth = now - riseTimes[ch];
-    if (pulseWidth >= 800 && pulseWidth <= 2200) {
+    if (esperandoBajada[ch] && pulseWidth >= 800 && pulseWidth <= 2200) {
       pwmChannels[ch] = pulseWidth;
       lastUpdateUs[ch] = now;
       publicadaUs = now;
-      pendiente = true;
+      recibidos |= uint8_t(1U << ch);
+      actualizados |= uint8_t(1U << ch);
+      pendiente = (actualizados & requeridos) == requeridos;
       tramasValidas++;
     } else {
       tramasInvalidas++;
+      recibidos &= uint8_t(~(1U << ch));
+      actualizados &= uint8_t(~(1U << ch));
+      pendiente = false;
     }
+    esperandoBajada[ch] = false;
   }
   portEXIT_CRITICAL_ISR(&pwmMux);
 }
@@ -61,12 +71,15 @@ inline void comenzar(const uint8_t pins[] = DEFAULT_PINS, uint8_t numPins = MAX_
   pendiente = false;
   tramasValidas = 0;
   tramasInvalidas = 0;
+  recibidos = actualizados = requeridos = 0;
 
   for (uint8_t i = 0; i < MAX_CHANNELS; ++i) {
     pwmChannels[i] = 1500;
     riseTimes[i] = 0;
-    lastUpdateUs[i] = publicadaUs;
+    lastUpdateUs[i] = 0;
+    esperandoBajada[i] = false;
     channelPins[i] = (i < numPins) ? pins[i] : UNASSIGNED_PIN;
+    if (channelPins[i] != UNASSIGNED_PIN) requeridos |= uint8_t(1U << i);
   }
   portEXIT_CRITICAL(&pwmMux);
 
@@ -83,6 +96,17 @@ inline void comenzar(uint8_t dummyPin) {
   comenzar(DEFAULT_PINS, MAX_CHANNELS);
 }
 
+// Comprueba CADA entrada asignada, incluido CH6. Otro canal no renueva su edad.
+inline bool vigentes(uint32_t limiteUs) {
+  portENTER_CRITICAL(&pwmMux);
+  const uint32_t ahora = micros();
+  bool ok = requeridos != 0 && (recibidos & requeridos) == requeridos;
+  for (uint8_t i = 0; i < MAX_CHANNELS; ++i)
+    if ((requeridos & (1U << i)) && uint32_t(ahora - lastUpdateUs[i]) > limiteUs) ok = false;
+  portEXIT_CRITICAL(&pwmMux);
+  return ok;
+}
+
 // Fixed function signature: Removed default parameter to prevent overload ambiguity
 inline bool leer(uint16_t salida[MAX_CHANNELS], uint8_t &cantidad, uint32_t &marcaUs, uint8_t *canalesTrama) {
   portENTER_CRITICAL(&pwmMux);
@@ -94,7 +118,7 @@ inline bool leer(uint16_t salida[MAX_CHANNELS], uint8_t &cantidad, uint32_t &mar
   for (uint8_t i = 0; i < MAX_CHANNELS; ++i) {
     salida[i] = pwmChannels[i];
   }
-  pendiente = false;
+  if (nueva) { pendiente = false; actualizados = 0; }
   portEXIT_CRITICAL(&pwmMux);
   return nueva;
 }

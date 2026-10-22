@@ -79,48 +79,75 @@ struct ControlRumbo {
   }
 };
 
-// CH6 ordena alineaciones; en reposo no mantiene un PID que haga girar ruedas.
+// CH6 es una orden puntual: ir a 0/180 por el camino corto y luego liberar.
+// CH1 tiene prioridad manual. CH3/CH4 se procesan incluso al alinear.
+// En conduccion normal, sostener el ultimo rumbo al trasladarse sin CH1.
 struct RumboHibrido {
+  static constexpr float BANDA_SALIDA_DEG = 1.5f;
+  static constexpr float VEL_LLEGADA_DEG_S = 15.0f;
+  static constexpr float ASENTAMIENTO_S = 0.15f;
+  static constexpr float ADELANTO_MAX_DEG = 40.0f;
+  static constexpr float TIEMPO_ALINEACION_S = 4.0f;
   ControlRumbo control;
-  bool alineando = false;
-  bool enMovimiento = false;
-  bool reposo = true;
+  bool alineando = false, corrigiendo = false, reposo = true;
+  bool giroAnterior = false;
+  bool alineacionAgotada = false;
+  float tiempoAlineando = 0.0f, tiempoEnBanda = 0.0f;
 
   void detener(float yaw) {
     control.fijar(yaw);
-    alineando = enMovimiento = false;
+    alineando = corrigiendo = giroAnterior = alineacionAgotada = false;
+    tiempoAlineando = tiempoEnBanda = 0.0f;
     reposo = true;
   }
 
   float paso(bool cambioModo, int8_t modo, float yaw, float velocidadYaw,
              float avance, float lateral, float stickGiro, float dt,
              float velocidadReferencia, float kp, float ki, float kd) {
+    const bool traslacion = fabsf(avance) > 0.001f || fabsf(lateral) > 0.001f;
+    const bool giroManual = fabsf(stickGiro) > 0.001f;
     if (cambioModo) {
-      if (modo == 0) detener(yaw);
-      else {
-        control.fijar(modo > 0 ? 0.0f : 180.0f);
-        alineando = true;
-      }
+      control.fijar(modo > 0 ? 0.0f : (modo < 0 ? 180.0f : yaw));
+      alineando = modo != 0;
+      alineacionAgotada = false;
+      tiempoAlineando = tiempoEnBanda = 0.0f;
     }
-    bool traslacion = fabsf(avance) > 0.001f || fabsf(lateral) > 0.001f;
-    bool giroManual = fabsf(stickGiro) > 0.001f;
     if (giroManual) {
-      if (alineando || !enMovimiento) control.fijar(yaw);
+      // CH1 cancela la maniobra automatica inmediatamente, sin dejar de leer RC.
+      if (!giroAnterior || alineando || cambioModo) control.fijar(yaw);
       alineando = false;
       control.mover(stickGiro, dt, velocidadReferencia);
-      // El objetivo no puede adelantarse más de 40° al rumbo real.
-      float adelanto = limitar(envolverGrados(control.referencia - yaw), -40.0f, 40.0f);
+      float adelanto = limitar(envolverGrados(control.referencia - yaw),
+                               -ADELANTO_MAX_DEG, ADELANTO_MAX_DEG);
       control.referencia = envolverGrados(yaw + adelanto);
-    } else if (traslacion && !enMovimiento && !alineando) {
-      control.fijar(yaw); // mantener el rumbo al iniciar la traslación
+    } else if (giroAnterior && !alineando) {
+      // Soltar CH1: mantener este nuevo rumbo, independientemente de CH6.
+      control.fijar(yaw);
     }
-    float error = envolverGrados(control.referencia - yaw);
-    bool dentro = fabsf(error) <= 2.0f && fabsf(velocidadYaw) <= 5.0f;
-    if (alineando && dentro) alineando = false;
-    reposo = !traslacion && !giroManual && !alineando;
-    enMovimiento = traslacion || giroManual;
-    if (reposo) { control.fijar(yaw); return 0.0f; }
-    if (!giroManual && dentro) { control.integral = 0.0f; return 0.0f; }
+    giroAnterior = giroManual;
+
+    if (alineando) {
+      tiempoAlineando += dt;
+      const float error = envolverGrados(control.referencia - yaw);
+      if (fabsf(error) <= BANDA_SALIDA_DEG &&
+          fabsf(velocidadYaw) <= VEL_LLEGADA_DEG_S) tiempoEnBanda += dt;
+      else tiempoEnBanda = 0.0f;
+      const bool llego = tiempoEnBanda >= ASENTAMIENTO_S;
+      if (llego || tiempoAlineando >= TIEMPO_ALINEACION_S) {
+        alineacionAgotada = !llego;
+        alineando = false;
+        // Sin referencia pendiente que provoque otro giro al liberar CH6.
+        control.fijar(yaw);
+      }
+    }
+    // CH3/CH4 nunca cancelan CH6; la traslacion y el rumbo se calculan juntos.
+    corrigiendo = traslacion || giroManual || alineando;
+    reposo = !corrigiendo;
+    if (reposo) {
+      // PWM cero en neutro; tomar rumbo actual para la siguiente traslacion.
+      control.fijar(yaw);
+      return 0.0f;
+    }
     return control.calcular(yaw, velocidadYaw, dt, kp, ki, kd);
   }
 };

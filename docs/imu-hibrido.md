@@ -1,3 +1,5 @@
+> Implementación vigente BNO055: ver [revisión V3](../REVISION_IMU_CH6.md). CH6 ahora es una orden puntual; la descripción histórica de modos de este documento no define la lógica V3.
+
 # Control híbrido orientado al campo
 
 Las variantes BNO055 y MPU6050 conservan la mezcla de cuatro motores, pero
