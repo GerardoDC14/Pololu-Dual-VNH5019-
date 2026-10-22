@@ -1,0 +1,148 @@
+#pragma once
+#include <stdint.h>
+#include <math.h>
+
+namespace omni {
+inline float limitar(float x, float a, float b) {
+  return x < a ? a : (x > b ? b : x);
+}
+
+// Orden fisico fijo: F, I, T, D. El frente es la diagonal entre F e I.
+// +lateral apunta entre I y T. Signos previos a la polaridad electrica.
+inline void mezclar(float avance, float lateral, float giro, float salida[4]) {
+  salida[0] = avance + lateral + giro;
+  salida[1] = -avance + lateral + giro;
+  salida[2] = -avance - lateral + giro;
+  salida[3] = avance - lateral + giro;
+  float escala = 1.0f;
+  for (int i = 0; i < 4; ++i) escala = fmaxf(escala, fabsf(salida[i]));
+  for (int i = 0; i < 4; ++i) salida[i] /= escala;
+}
+
+inline float eje(uint16_t pulso, int minimo, int centro, int maximo, int zona) {
+  int diferencia = static_cast<int>(pulso) - centro;
+  if (diferencia > zona)
+    return limitar(float(diferencia - zona) / (maximo - centro - zona), 0, 1);
+  if (diferencia < -zona)
+    return limitar(float(diferencia + zona) / (centro - minimo - zona), -1, 0);
+  return 0;
+}
+
+// Genera un pulso de duracion fija cuando un switch RC cambia en cualquier
+// direccion. El primer valor valido solo establece el estado inicial.
+struct DisparoPorCambio {
+  bool inicializado = false;
+  bool estado = false;
+  bool activo = false;
+  uint32_t inicio = 0;
+  uint32_t ultimoDisparo = 0;
+  bool huboDisparo = false;
+
+  bool actualizar(bool valido, uint16_t pulso, uint32_t ahora, uint32_t duracion,
+                  uint32_t intervaloMinimo = 1000) {
+    if (!valido) {
+      inicializado = false;
+      activo = false;
+      return false;
+    }
+
+    if (activo && uint32_t(ahora - inicio) >= duracion) activo = false;
+
+    bool estadoNuevo = estado;
+    bool estadoDefinido = false;
+    if (pulso < 1300) {
+      estadoNuevo = false;
+      estadoDefinido = true;
+    } else if (pulso > 1700) {
+      estadoNuevo = true;
+      estadoDefinido = true;
+    }
+
+    if (estadoDefinido) {
+      if (!inicializado) {
+        inicializado = true;
+        estado = estadoNuevo;
+      } else if (estadoNuevo != estado) {
+        estado = estadoNuevo;
+        // Los cambios durante el pulso no lo prolongan. La pausa limita
+        // repeticiones; el estado del switch se sigue actualizando.
+        if (!activo && (!huboDisparo || uint32_t(ahora - ultimoDisparo) >= intervaloMinimo)) {
+          inicio = ultimoDisparo = ahora;
+          huboDisparo = activo = true;
+        }
+      }
+    }
+
+    if (activo && uint32_t(ahora - inicio) >= duracion) activo = false;
+    return activo;
+  }
+};
+
+struct Habilitacion {
+  bool activo = false;
+  bool vioOff = false;
+  bool anteriorOn = false;
+
+  void actualizar(bool valido, int pulso, bool centrado) {
+    if (!valido) {
+      activo = vioOff = anteriorOn = false;
+      return;
+    }
+    if (pulso < 1300) {
+      activo = false;
+      vioOff = centrado;
+      anteriorOn = false;
+    } else if (pulso > 1700) {
+      if (!anteriorOn) {
+        activo = vioOff && centrado;
+        vioOff = false;
+      }
+      anteriorOn = true;
+    } else {
+      activo = vioOff = anteriorOn = false;
+    }
+  }
+};
+
+struct Rampa {
+  int actual = 0;
+  int ultimoSigno = 0;
+  uint32_t ceroDesde = 0;
+
+  void cortar(uint32_t ahora) {
+    if (actual != 0) ceroDesde = ahora;
+    actual = 0;
+  }
+
+  int paso(int objetivo, uint32_t ahora, uint32_t pausa) {
+    objetivo = objetivo < -255 ? -255 : (objetivo > 255 ? 255 : objetivo);
+    int signo = objetivo > 0 ? 1 : (objetivo < 0 ? -1 : 0);
+    // La inversion primero baja a cero; la pausa empieza al llegar a cero.
+    if (actual != 0 && signo != 0 && signo != (actual > 0 ? 1 : -1)) objetivo = 0;
+    if (actual == 0 && signo != 0 && ultimoSigno != 0 && signo != ultimoSigno &&
+        uint32_t(ahora - ceroDesde) < pausa) return 0;
+    int previo = actual;
+    if (actual < objetivo) ++actual;
+    else if (actual > objetivo) --actual;
+    if (actual == 0 && previo != 0) ceroDesde = ahora;
+    if (actual != 0) ultimoSigno = actual > 0 ? 1 : -1;
+    return actual;
+  }
+};
+}
+
+namespace omni {
+// Exige sticks centrados continuamente antes de aceptar movimiento/disparo.
+struct ArranqueSeguro {
+  bool listo = false, contando = false;
+  uint32_t desde = 0;
+  bool actualizar(bool valido, bool centrado, uint32_t ahora, uint32_t espera = 500) {
+    if (!valido) { listo = contando = false; return false; }
+    if (listo) return true;
+    if (!centrado) { contando = false; return false; }
+    if (!contando) { desde = ahora; contando = true; }
+    if (uint32_t(ahora - desde) >= espera) listo = true;
+    return listo;
+  }
+};
+}
